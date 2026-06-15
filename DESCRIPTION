@@ -45,7 +45,7 @@ Encoding: UTF-8
 RoxygenNote: 7.2.3
 Suggests: testthat (>= 3.0.0)
 NeedsCompilation: yes
-Packaged: 2026-06-15 11:25:23 UTC; romano
+Packaged: 2026-06-15 13:30:24 UTC; romano
 Author: Gaetano Romano [aut, cre, trl],
   Kes Ward [aut],
   Yuntang Fan [aut],
