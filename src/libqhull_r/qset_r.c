@@ -963,6 +963,9 @@ void *qh_setlast(setT *set) {
     roundup memory if small set
     initialize as empty set
 */
+#if defined(__clang__)
+__attribute__((no_sanitize("undefined")))
+#endif
 setT *qh_setnew(qhT *qh, int setsize) {
   setT *set;
   int sizereceived; /* used if !qh_NOmem */
