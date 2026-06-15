@@ -39,6 +39,16 @@ void    qh_fprintf(qhT *qh, FILE *fp, int msgcode, const char *fmt, ... );
 #  endif
 #endif
 
+/* Suppress UBSAN bounds checking for the setelemT e[1] struct hack.
+   Sets are allocated with sufficient memory beyond e[1]; accesses are
+   safe at runtime despite the [1] declaration. */
+#if defined(__GNUC__)
+#  define QH_NO_SANITIZE __attribute__((no_sanitize("bounds")))
+#else
+#  define QH_NO_SANITIZE
+#endif
+
+
 /*=============== internal macros ===========================*/
 
 /*============ functions in alphabetical order ===================*/
@@ -233,6 +243,7 @@ void qh_setappend2ndlast(qhT *qh, setT **setp, void *newelem) {
   design:
     checks that maxsize, actual size, and NULL terminator agree
 */
+QH_NO_SANITIZE
 void qh_setcheck(qhT *qh, setT *set, const char *tname, unsigned int id) {
   int maxsize, size;
   int waserr= 0;
@@ -309,6 +320,7 @@ void qh_setcompact(qhT *qh, setT *set) {
     copy the elements to the newset
 
 */
+QH_NO_SANITIZE
 setT *qh_setcopy(qhT *qh, setT *set, int extra) {
   setT *newset;
   int size;
@@ -383,6 +395,7 @@ void *qh_setdel(setT *set, void *oldelem) {
     else
       delete last element and update actual size
 */
+QH_NO_SANITIZE
 void *qh_setdellast(setT *set) {
   int setsize;  /* actually, actual_size + 1 */
   int maxsize;
@@ -565,6 +578,7 @@ setT *qh_setduplicate(qhT *qh, setT *set, int elemsize) {
     set can not be NULL
 
 */
+QH_NO_SANITIZE
 void **qh_setendpointer(setT *set) {
 
   setelemT *sizep= SETsizeaddr_(set);
@@ -963,9 +977,7 @@ void *qh_setlast(setT *set) {
     roundup memory if small set
     initialize as empty set
 */
-#if defined(__clang__)
-__attribute__((no_sanitize("undefined")))
-#endif
+QH_NO_SANITIZE
 setT *qh_setnew(qhT *qh, int setsize) {
   setT *set;
   int sizereceived; /* used if !qh_NOmem */
@@ -1009,6 +1021,7 @@ setT *qh_setnew(qhT *qh, int setsize) {
     append head of old set to new set
     append tail of old set to new set
 */
+QH_NO_SANITIZE
 setT *qh_setnew_delnthsorted(qhT *qh, setT *set, int size, int nth, int prepend) {
   setT *newset;
   void **oldp, **newp;
@@ -1091,6 +1104,7 @@ setT *qh_setnew_delnthsorted(qhT *qh, setT *set, int size, int nth, int prepend)
   notes:
     never errors
 */
+QH_NO_SANITIZE
 void qh_setprint(qhT *qh, FILE *fp, const char* string, setT *set) {
   int size, k;
 
@@ -1318,6 +1332,7 @@ void qh_settemppush(qhT *qh, setT *set) {
     check size
     update actual size of set
 */
+QH_NO_SANITIZE
 void qh_settruncate(qhT *qh, setT *set, int size) {
 
   if (size < 0 || size > set->maxsize) {
@@ -1370,6 +1385,7 @@ int qh_setunique(qhT *qh, setT **set, void *elem) {
     update actual size
     zero elements starting at e[index]
 */
+QH_NO_SANITIZE
 void qh_setzero(qhT *qh, setT *set, int idx, int size) {
   int count;
 
