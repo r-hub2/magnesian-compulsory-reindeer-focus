@@ -1,2 +1,4 @@
 CXX_STD = CXX17
 PKG_CPPFLAGS = -I.
+libqhull_r/%.o: libqhull_r/%.c
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -fno-sanitize=bounds -c $< -o $@
