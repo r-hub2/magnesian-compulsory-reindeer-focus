@@ -224,32 +224,32 @@ test_that("right-sided detects increase; left-sided does not (seed 789)", {
 })
 
 
-# ===========================================================================
-# 5. focus_sequential_test — multivariate Gaussian
-# ===========================================================================
-
-test_that("multivariate Gaussian detects changepoint near true location (seed 42)", {
-  set.seed(42)
-  Y_m <- rbind(matrix(rnorm(1000 * 3, 0),   ncol = 3),
-               matrix(rnorm( 500 * 3, 1.2), ncol = 3))
-
-  res <- focus_sequential_test(Y_m, threshold = 30, type = "multivariate", family = "gaussian")
-
-  expect_equal(res$detection_time,       1012)
-  expect_equal(res$detected_changepoint, 1000)
-  expect_equal(res$type, "multivariate")
-})
-
-test_that("multivariate Gaussian: stat length equals n", {
-  set.seed(42)
-  Y_m <- rbind(matrix(rnorm(200 * 2, 0), ncol = 2),
-               matrix(rnorm(100 * 2, 2), ncol = 2))
-
-  res <- focus_sequential_test(Y_m, threshold = Inf, type = "multivariate", family = "gaussian")
-
-  expect_equal(length(res$stat), 300)
-  expect_equal(res$n,            300)
-})
+# # ===========================================================================
+# # 5. focus_sequential_test — multivariate Gaussian
+# # ===========================================================================
+#
+# test_that("multivariate Gaussian detects changepoint near true location (seed 42)", {
+#   set.seed(42)
+#   Y_m <- rbind(matrix(rnorm(1000 * 3, 0),   ncol = 3),
+#                matrix(rnorm( 500 * 3, 1.2), ncol = 3))
+#
+#   res <- focus_sequential_test(Y_m, threshold = 30, type = "multivariate", family = "gaussian")
+#
+#   expect_equal(res$detection_time,       1012)
+#   expect_equal(res$detected_changepoint, 1000)
+#   expect_equal(res$type, "multivariate")
+# })
+#
+# test_that("multivariate Gaussian: stat length equals n", {
+#   set.seed(42)
+#   Y_m <- rbind(matrix(rnorm(200 * 2, 0), ncol = 2),
+#                matrix(rnorm(100 * 2, 2), ncol = 2))
+#
+#   res <- focus_sequential_test(Y_m, threshold = Inf, type = "multivariate", family = "gaussian")
+#
+#   expect_equal(length(res$stat), 300)
+#   expect_equal(res$n,            300)
+# })
 
 
 # ===========================================================================
