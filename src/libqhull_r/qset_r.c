@@ -43,7 +43,7 @@ void    qh_fprintf(qhT *qh, FILE *fp, int msgcode, const char *fmt, ... );
    Sets are allocated with sufficient memory beyond e[1]; accesses are
    safe at runtime despite the [1] declaration. */
 #if defined(__GNUC__)
-#  define QH_NO_SANITIZE __attribute__((no_sanitize("bounds")))
+#  define QH_NO_SANITIZE __attribute__((no_sanitize("bounds", "bounds-strict")))
 #else
 #  define QH_NO_SANITIZE
 #endif
