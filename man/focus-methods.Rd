@@ -119,7 +119,7 @@ The \code{plot} method for \code{"focus_offline"} objects draws the trace of
 the test statistic(s) over time, with the finite threshold(s) as dashed
 horizontal lines and, if a detection occurred, the estimated changepoint as
 a dotted vertical line. If \code{data} are given, they are drawn above the
-trace. If \pkg{ggplot2} is installed, \code{autoplot()} returns the same plot
+trace, with one panel per dimension. If \pkg{ggplot2} is installed, \code{autoplot()} returns the same plot
 as a \code{"ggplot"} object.
 
 Projection index sets can be subset with \code{[} (e.g., with

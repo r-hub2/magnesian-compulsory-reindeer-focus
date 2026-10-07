@@ -48,7 +48,7 @@
 #' the test statistic(s) over time, with the finite threshold(s) as dashed
 #' horizontal lines and, if a detection occurred, the estimated changepoint as
 #' a dotted vertical line. If \code{data} are given, they are drawn above the
-#' trace. If \pkg{ggplot2} is installed, \code{autoplot()} returns the same plot
+#' trace, with one panel per dimension. If \pkg{ggplot2} is installed, \code{autoplot()} returns the same plot
 #' as a \code{"ggplot"} object.
 #'
 #' Projection index sets can be subset with \code{[} (e.g., with
@@ -101,6 +101,13 @@ NULL
 .focus_field <- function(label, value) {
   cat("  ", formatC(paste0(label, ":"), width = 15L, flag = "-"), value, "\n",
       sep = "")
+}
+
+# Panel labels for the data: the column names, if any, or "Data" (univariate)
+# and "Dimension j" (multivariate).
+.focus_data_labels <- function(data) {
+  if (!is.null(colnames(data))) return(colnames(data))
+  if (ncol(data) == 1L) "Data" else paste("Dimension", seq_len(ncol(data)))
 }
 
 # Formats each number separately, with its own significant digits.
@@ -249,14 +256,22 @@ plot.focus_offline <- function(x, data = NULL, type = "l", lty = 1, col = NULL, 
   xlim <- NULL
   if (!is.null(data)) {
     data <- as.matrix(data)
+    labels <- .focus_data_labels(data)
     xlim <- c(1, max(nrow(data), nrow(stat)))
-    oldpar <- graphics::par(mfrow = c(2L, 1L), mar = c(4, 4, 1, 1) + 0.1)
+    # One panel per dimension of the data, above the trace of the statistic(s)
+    # cex is set after mfrow, which would otherwise shrink the text with 3+ panels
+    oldpar <- graphics::par(mfrow = c(ncol(data) + 1L, 1L),
+                            mar = c(if (ncol(data) > 1L) 2 else 4, 4, 1, 1) + 0.1,
+                            cex = if (ncol(data) > 1L) 0.8 else 1)
     on.exit(graphics::par(oldpar))
-    graphics::matplot(seq_len(nrow(data)), data, type = "l", lty = 1, col = "grey30",
-                      xlim = xlim, xlab = "", ylab = "Data", main = main)
-    if (!is.null(x$detected_changepoint)) {
-      graphics::abline(v = x$detected_changepoint, lty = 3, col = "grey50")
+    for (j in seq_len(ncol(data))) {
+      graphics::plot(seq_len(nrow(data)), data[, j], type = "l", col = "grey30", xlim = xlim,
+                     xlab = "", ylab = labels[j], main = if (j == 1L) main)
+      if (!is.null(x$detected_changepoint)) {
+        graphics::abline(v = x$detected_changepoint, lty = 3, col = "grey50")
+      }
     }
+    graphics::par(mar = c(4, 4, 1, 1) + 0.1)
     main <- NULL
   }
   graphics::matplot(seq_len(nrow(stat)), stat, type = type, lty = lty, col = col, xlim = xlim,
@@ -359,7 +374,8 @@ as.matrix.focus_projections <- function(x, ...) {
 #' @exportS3Method ggplot2::autoplot
 autoplot.focus_offline <- function(object, data = NULL, ...) {
   .data <- ggplot2::.data
-  panels <- c("Data", "Statistic")
+  labels <- if (!is.null(data)) .focus_data_labels(as.matrix(data))
+  panels <- c(labels, "Statistic")
   stat <- as.matrix(object$stat)
   stat_names <- .focus_stat_names(ncol(stat), object$family)
   trace <- data.frame(time = rep(seq_len(nrow(stat)), ncol(stat)), value = as.vector(stat),
@@ -374,11 +390,10 @@ autoplot.focus_offline <- function(object, data = NULL, ...) {
   p <- ggplot2::ggplot(trace, ggplot2::aes(x = .data$time, y = .data$value))
   if (!is.null(data)) {
     data <- as.matrix(data)
+    # One panel per dimension of the data, above the trace of the statistic(s)
     observed <- data.frame(time = rep(seq_len(nrow(data)), ncol(data)), value = as.vector(data),
-                           series = factor(rep(seq_len(ncol(data)), each = nrow(data))),
-                           panel = factor("Data", levels = panels))
-    p <- p + ggplot2::geom_line(ggplot2::aes(group = .data$series), data = observed,
-                                colour = "grey30")
+                           panel = factor(rep(labels, each = nrow(data)), levels = panels))
+    p <- p + ggplot2::geom_line(data = observed, colour = "grey30")
   }
   if (multiple) {
     p <- p + ggplot2::geom_line(ggplot2::aes(colour = .data$statistic))

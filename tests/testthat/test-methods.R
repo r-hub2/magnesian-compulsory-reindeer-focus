@@ -89,6 +89,12 @@ test_that("offline results have print, summary and plot methods", {
   res_np <- focus_offline(Y, threshold = c(10, 5), type = "npfocus", family = "npfocus",
                           quantiles = qnorm(c(0.25, 0.5, 0.75)))
   expect_silent(plot_quietly(res_np, data = Y))
+
+  # Multivariate data: one panel per dimension
+  set.seed(1)
+  Y_mv <- rbind(matrix(rnorm(300), ncol = 3), matrix(rnorm(150, mean = 1), ncol = 3))
+  res_mv <- focus_offline(Y_mv, threshold = 30, type = "multivariate")
+  expect_silent(plot_quietly(res_mv, data = Y_mv))
 })
 
 test_that("generate_projection_indexes returns a focus_projections object", {
@@ -131,4 +137,11 @@ test_that("autoplot returns a ggplot of an offline result", {
   res_np <- focus_offline(Y, threshold = c(10, 5), type = "npfocus", family = "npfocus",
                           quantiles = qnorm(c(0.25, 0.5, 0.75)))
   expect_silent(ggplot2::ggplot_build(ggplot2::autoplot(res_np, data = Y)))
+
+  # Multivariate data: one panel per dimension
+  set.seed(1)
+  Y_mv <- rbind(matrix(rnorm(300), ncol = 3), matrix(rnorm(150, mean = 1), ncol = 3))
+  res_mv <- focus_offline(Y_mv, threshold = 30, type = "multivariate")
+  built <- ggplot2::ggplot_build(ggplot2::autoplot(res_mv, data = Y_mv))
+  expect_equal(nlevels(built$layout$layout$PANEL), 4L)
 })
