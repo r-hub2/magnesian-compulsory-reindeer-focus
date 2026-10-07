@@ -15,7 +15,7 @@ namespace changepoint {
   CostsArp:
   
   Strongly-typed ARP cost function that computes the maximum test statistic
-  across all four detection directions (right_pos, left_pos, right_neg, left_neg).
+  over the candidate changes, for increases and decreases (see focus_ARp.cpp).
 
   - compute_costs_arp_typed(const ARpInfo&)
       The real implementation: accepts only ARpInfo (typed), extracts the
@@ -33,9 +33,11 @@ inline ChangepointResult compute_costs_arp_typed(const ARpInfo& arp_info) {
   // Extract the max statistic and changepoint computed during update
   double stat = arp_info.max_stat();
   int cpt = arp_info.cpt();
-  
+
   out.stat = stat;
-  out.changepoint = (cpt < 0) ? std::nullopt : std::optional<int>(cpt);
+  // The update counts changepoints on the whitened observations, which start
+  // after the first p observations: add p to report it on the original data.
+  out.changepoint = (cpt < 0) ? std::nullopt : std::optional<int>(cpt + arp_info.p());
   
   return out;
 }

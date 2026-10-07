@@ -22,11 +22,23 @@
 using namespace Rcpp;
 using namespace changepoint;
 
+// Returns the C++ state of a "focus_detector" object. The class is checked
+// first, so that external pointers not created by detector_create() are
+// rejected instead of being dereferenced.
+static std::shared_ptr<Info>& detector_state(SEXP det_ptr) {
+  if (TYPEOF(det_ptr) != EXTPTRSXP || !Rf_inherits(det_ptr, "focus_detector"))
+    stop("`det_ptr` must be a detector created by detector_create().");
+  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
+  if (!ptr || !(*ptr))
+    stop("Invalid detector: detectors cannot be restored from a saved session.");
+  return *ptr;
+}
+
 // ------------------------
 // Factories & wrappers
 // ------------------------
 
-//' Create a FOCuS changepoint detector
+//' Create a FOCuS Changepoint Detector
 //'
 //' Creates an online (sequential) changepoint detector object that provides
 //' a step-by-step interface to the FOCuS algorithm. Each call to
@@ -42,8 +54,9 @@ using namespace changepoint;
 //'     \item \code{"arp"}: AutoRegressive Process detection. Requires \code{rho} parameter.
 //'   }
 //' @param dim_indexes List of integer vectors specifying projection index sets
-//'   for high-dimensional multivariate detectors. Not required for sequences of dimentions less than 5.
-//'    Each element is a vector of 0-based column indices. Default is \code{NULL}.
+//'   for high-dimensional multivariate detectors (not required for data with
+//'   at most 5 dimensions). Each element is a vector of 0-based column indices.
+//'   Default is \code{NULL}.
 //' @param quantiles Numeric vector of quantiles for nonparametric
 //'   (\code{"npfocus"}) detectors. Required when \code{type = "npfocus"}.
 //'   Default is \code{NULL}.
@@ -64,43 +77,52 @@ using namespace changepoint;
 //'   the known pre-change parameter. Only used when \code{type = "arp"}.
 //'   Default is \code{NULL}.
 //'
-//' @return An external pointer (SEXP) to the detector object. This should be
-//'   passed to other detector functions like \code{\link{detector_update}()} and
-//'   \code{\link{get_statistics}()}.
+//' @return An object of class \code{"focus_detector"}: an external pointer to
+//'   the state of the C++ detector, which is updated in place. It should be
+//'   passed to the other detector functions, such as
+//'   \code{\link{detector_update}()} and \code{\link{get_statistics}()}.
+//'   \code{print} and \code{summary} methods are available, see
+//'   \code{\link{focus-methods}}. As external pointers, detectors cannot be
+//'   saved and restored across \R sessions.
 //'
 //' @details
 //' The detector maintains sufficient statistics internally and uses pruning
 //' to efficiently track candidate changepoints. The \code{pruning_mult} and
 //' \code{pruning_offset} parameters control the pruning strategy.
 //'
-//' AutoRegressive Process (ARP):
+//' \strong{AutoRegressive Process (ARP).}
 //' When \code{type = "arp"}, the \code{rho} parameter must be provided as a numeric
 //' vector of AR coefficients (lag-1, lag-2, ..., lag-p). The detector then computes
 //' statistics optimal for detecting changepoints in AR(p) processes. Use
 //' \code{get_statistics(family = "arp")} to retrieve the test statistics.
-//' The optional \code{theta0} parameter specifies the pre-change mean and is tied
+//' The optional \code{mu0_arp} parameter specifies the pre-change mean and is tied
 //' to the pruning logic: if provided, it enables more efficient pruning by allowing
 //' the algorithm to filter candidates based on the known pre-change parameter.
 //'
-//' High-dimentional multivariate detectors:
-//' For high-dimensional multivariate detection, computing the full hull would be too prohibitive.
-//' Additionally, the complexity is expected to be log(n)^p, where n is the number of iterations and p is the
-//' dimensions. So for short, high-dimentional sequences, it is possible to reconstruct the set of changepoint
-//' locations by approximating the hull on projections in smaller dimentions.  \code{dim_indexes} specifies which dimensions
-//' to use for each projection of the convex hull for pruning. Use \code{generate_projection_indexes()} to
-//' generate systematic projection sets.
+//' \strong{High-dimensional multivariate detectors.}
+//' For high-dimensional multivariate detection, computing the full convex hull
+//' is prohibitive, as the expected number of candidates grows as
+//' \eqn{\log(n)^p}{log(n)^p}, where \eqn{n} is the number of observations and
+//' \eqn{p} the number of dimensions. The set of candidate changepoints can then
+//' be approximated by computing the hull on lower-dimensional projections:
+//' \code{dim_indexes} specifies which dimensions to use for each projection.
+//' Use \code{\link{generate_projection_indexes}()} to generate systematic
+//' projection sets.
 //'
-//' NPFOCuS:
-//'   For non-parametric detection one needs to set \code{detector(type = "npfocus")} and the cost can be computed as \code{get_statistics(family = "npfocus")}.
-//'   Any other cost will not work with this detector type. The \code{quantiles} vector argument is required, see \code{\link{get_statistics}()} for details.
+//' \strong{NPFOCuS.}
+//' For non-parametric detection, create the detector with
+//' \code{detector_create(type = "npfocus", quantiles = ...)} and compute the
+//' statistics with \code{get_statistics(family = "npfocus")}. No other family
+//' can be used with this detector type.
 //'
 //' @examples
 //' # Univariate detector
 //' det <- detector_create(type = "univariate")
-//' detector_update(det, 0.5)
-//' detector_update(det, 1.2)
+//' det <- detector_update(det, 0.5)
+//' det <- detector_update(det, 1.2)
+//' det
 //' r <- get_statistics(det, family = "gaussian")
-//' print(r)
+//' r
 //'
 //' ## Online (sequential) example
 //' # Generate data with a changepoint
@@ -256,32 +278,37 @@ SEXP detector_create(std::string type,
     stop("type must be one of: 'multivariate', 'univariate', 'univariate_one_sided', 'npfocus', 'arp'");
   }
 
-  // ---- Return Info pointer ----
+  // ---- Return Info pointer, classed as "focus_detector" ----
   XPtr<std::shared_ptr<Info>> ptr(new std::shared_ptr<Info>(cs), true);
+  ptr.attr("type") = type;
+  if (type == "univariate_one_sided") ptr.attr("side") = side;
+  if (type == "arp") ptr.attr("ar_order") = static_cast<int>(NumericVector(rho.get()).size());
+  ptr.attr("class") = "focus_detector";
   return ptr;
 }
 
 
-//' Update detector with new observation(s)
+//' Update a Detector with New Observations
 //'
-//' Adds new observation(s) to the detector's internal state and updates
-//' sufficient statistics.
+//' Adds a new observation to the detector's internal state, updates the
+//' sufficient statistics and prunes the set of candidate changepoints.
 //'
-//' @param det_ptr External pointer to detector created by
+//' @param det_ptr A \code{"focus_detector"} object created by
 //'   \code{\link{detector_create}()}.
-//' @param y Numeric vector of new observation(s). For univariate detectors,
+//' @param y Numeric vector with the new observation. For univariate detectors,
 //'   this should be a scalar (length-1 vector). For multivariate detectors,
 //'   this should be a vector matching the number of dimensions.
-//' @param lambda Numeric scalar. Rate parameter for background process (default: 1.0).
-//'   Allows for non-fixed background rate. For example, use \code{lambda_i} for observation-specific rates.
-//'   Default is \code{1.0} (standard CUSUM, one observation per update).
+//' @param lambda Numeric scalar. Weight of the new observation: the internal
+//'   time counter is incremented by \code{lambda} rather than by one, which
+//'   allows for a non-constant background rate (e.g., observation-specific
+//'   exposures). Default is \code{1.0}, i.e., one observation per update.
 //'
 //' @return
-//' An external pointer to the detector (the same object that was passed in).
-//' The detector is updated *in place* — no copy is made — so this return value
-//' is provided only for convenience, for example when using the native R pipe
-//' operator (`|>`) e.g.,
-//' \code{det |> detector_update(y) |> get_statistics()}.
+//' The same \code{"focus_detector"} object that was passed in. The detector is
+//' updated \emph{in place} (no copy is made), so the return value is provided
+//' only for convenience, for example to chain calls with the native pipe
+//' operator, as in
+//' \code{det |> detector_update(y) |> get_statistics(family = "gaussian")}.
 //'
 //' @examples
 //' # Univariate example
@@ -315,18 +342,16 @@ SEXP detector_create(std::string type,
 //' @export
 // [[Rcpp::export]]
 SEXP detector_update(SEXP det_ptr, NumericVector y, double lambda = 1.0) {
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-  (*ptr)->update(as<std::vector<double>>(y), lambda);
+  detector_state(det_ptr)->update(as<std::vector<double>>(y), lambda);
   return det_ptr;
 }
 
-//' Compute current changepoint statistics
+//' Compute the Current Changepoint Statistics
 //'
 //' Computes the current changepoint test statistic and detection result based
 //' on all observations processed so far.
 //'
-//' @param det_ptr External pointer to detector created by
+//' @param det_ptr A \code{"focus_detector"} object created by
 //'   \code{\link{detector_create}()}.
 //' @param family Character string specifying the distribution family:
 //'   \itemize{
@@ -345,14 +370,18 @@ SEXP detector_update(SEXP det_ptr, NumericVector y, double lambda = 1.0) {
 //'   Required and must be positive when \code{family = "gamma"}.
 //'   Default is \code{NULL}.
 //'
-//' @return A list with components:
-//'   \item{stopping_time}{Integer. Current time index (number of observations
+//' @return An object of class \code{"focus_statistics"}, with a \code{print}
+//'   method (see \code{\link{focus-methods}}): a list with components
+//'   \item{stopping_time}{Numeric. Current time index (number of observations
 //'     processed).}
-//'   \item{changepoint}{Integer or NULL. Detected changepoint location
-//'     (1-based index), or NULL if no changepoint detected.}
-//'   \item{stat}{Numeric scalar or vector. Test statistic(s). For univariate
-//'     detectors, a scalar. For multivariate detectors, a vector of statistics
-//'     for each projection.}
+//'   \item{changepoint}{Numeric or \code{NULL}. Estimated changepoint location,
+//'     i.e., the index of the last observation before the change, or
+//'     \code{NULL} if no estimate is available.}
+//'   \item{stat}{Numeric scalar or vector, or \code{NULL} if no candidate is
+//'     available yet. The test statistic: a scalar for all families except
+//'     \code{"npfocus"}, which returns the sum and the maximum of the
+//'     statistics over the quantiles.}
+//'   The family is stored in the attribute \code{"family"}.
 //'
 //' @details
 //' The function computes a log-likelihood ratio test statistic comparing the
@@ -360,25 +389,22 @@ SEXP detector_update(SEXP det_ptr, NumericVector y, double lambda = 1.0) {
 //' location). The statistic is typically compared against a threshold to
 //' determine if a changepoint should be declared.
 //'
-//' Gamma family:
+//' \strong{Gamma family.}
 //' When \code{family = "gamma"} a positive \code{shape} parameter must
 //' be provided; otherwise an error is raised. Passing \code{shape} for a
-//' non-gamma family will be ignored (and in some interfaces will trigger
-//'                                     a warning).
+//' non-gamma family raises a warning and the parameter is ignored.
 //'
-//' NPFOCuS:
-//'   For non-parametric detection one needs to set \code{detector(type = "npfocus")} and the cost can be computed as \code{get_statistics(family = "npfocus")}.
-//'   The \code{quantiles} vector argument is required. NPFOCuS returns two
-//' statistics (sum and max over quantiles) as a vector; in the offline interface
-//' \code{stat} will be a matrix with two columns.
+//' \strong{NPFOCuS.}
+//' For non-parametric detection, the detector must be created with
+//' \code{detector_create(type = "npfocus", quantiles = ...)}. NPFOCuS returns
+//' two statistics (sum and maximum over the quantiles) as a vector; in the
+//' offline interface, \code{stat} is a matrix with two columns.
 //'
-//' AutoRegressive Process (ARP):
+//' \strong{AutoRegressive Process (ARP).}
 //' For ARP detection, use \code{family = "arp"} with a detector created via
-//' \code{detector_create(type = "arp", rho = ...)}. The AR coefficients (rho)
-//' are already built into the detector at creation time. The optional \code{theta0}
-//' parameter specifies the pre-change mean (if known) and is used for pruning logic;
-//' if not provided (\code{NULL}), pruning operates without this information.
-//' Returns a scalar test statistic optimized for detecting changepoints in AR processes.
+//' \code{detector_create(type = "arp", rho = ...)}. The AR coefficients and the
+//' (optional) pre-change mean \code{mu0_arp} are set at detector creation, so
+//' \code{theta0} is ignored (with a warning) for this family.
 //'
 //' @examples
 //'
@@ -436,10 +462,7 @@ List get_statistics(SEXP det_ptr,
                     Nullable<NumericVector> theta0 = R_NilValue,
                     Nullable<NumericVector> shape = R_NilValue) {   // <-- added shape
 
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-
-  const Info& cs = **ptr;
+  const Info& cs = *detector_state(det_ptr);
 
   // ---- Prepare theta0 for cost function ----
   std::vector<double> theta0_vec;
@@ -511,100 +534,39 @@ List get_statistics(SEXP det_ptr,
     st = std::visit([](auto&& x) -> RObject { return wrap(x); }, *result.stat);
   }
 
-  return List::create(
+  List out = List::create(
     Named("stopping_time") = result.stopping_time,
     Named("changepoint")   = cp,
     Named("stat")          = st
   );
+  out.attr("family") = family;
+  out.attr("class") = "focus_statistics";
+  return out;
 }
 
 
-//' Get number of candidate segments
-//'
-//' Returns the number of candidate changepoint segments currently tracked
-//' by the detector.
-//'
-//' @param det_ptr External pointer to detector created by
-//'   \code{\link{detector_create}()}.
-//'
-//' @return Integer. Number of candidate segments.
-//'
-//' @details
-//' The FOCuS algorithm maintains a set of candidate segments that could
-//' potentially contain changepoints. This number grows with time but is
-//' controlled by the pruning parameters.
-//'
-//' @export
-// [[Rcpp::export]]
+// Number of candidates, called by the S3 method detector_cands_len.focus_detector().
+// [[Rcpp::export(.detector_cands_len)]]
 int detector_cands_len(SEXP det_ptr) {
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-  return static_cast<int>((*ptr)->candidates().size());
+  return static_cast<int>(detector_state(det_ptr)->candidates().size());
 }
 
-//' Get number of observations processed
-//'
-//' Returns the total number of observations processed by the detector.
-//'
-//' @param det_ptr External pointer to detector created by
-//'   \code{\link{detector_create}()}.
-//'
-//' @return Integer. Number of observations processed (current time index).
-//'
-//' @export
-// [[Rcpp::export]]
+// Number of observations, called by the S3 method detector_info_n.focus_detector().
+// [[Rcpp::export(.detector_info_n)]]
 int detector_info_n(SEXP det_ptr) {
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-  return (*ptr)->n();
+  return static_cast<int>(detector_state(det_ptr)->n());
 }
 
-//' Get cumulative sum statistic
-//'
-//' Returns the current cumulative sum statistic maintained by the detector.
-//'
-//' @param det_ptr External pointer to detector created by
-//'   \code{\link{detector_create}()}.
-//'
-//' @return Numeric vector. Cumulative sum statistic. For univariate detectors,
-//'   a scalar (length-1 vector). For multivariate detectors, a vector of
-//'   length equal to the number of dimensions.
-//'
-//' @export
-// [[Rcpp::export]]
+// Cumulative sums, called by the S3 method detector_info_sn.focus_detector().
+// [[Rcpp::export(.detector_info_sn)]]
 std::vector<double> detector_info_sn(SEXP det_ptr) {
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-  return (*ptr)->sn();
+  return detector_state(det_ptr)->sn();
 }
 
-//' Get candidate segments
-//'
-//' Returns detailed information about all candidate changepoint segments
-//' currently tracked by the detector.
-//'
-//' @param det_ptr External pointer to detector created by
-//'   \code{\link{detector_create}()}.
-//'
-//' @return A data frame (tibble) with columns:
-//'   \item{tau}{Integer vector. Candidate changepoint locations (0-based indices).}
-//'   \item{st}{List of numeric vectors. Sufficient statistics for each
-//'     candidate segment (e.g., cumulative sums of the data).}
-//'   \item{side}{Character vector. Side indicator for each candidate
-//'     (relevant for one-sided detectors).}
-//'
-//' @details
-//' Each row represents a candidate segment from time \code{tau} to the current
-//' time. The sufficient statistics in \code{st} are used to efficiently compute
-//' test statistics without reprocessing the data.
-//'
-//' @export
-// [[Rcpp::export]]
+// Candidate segments, called by the S3 method detector_candidates.focus_detector().
+// [[Rcpp::export(.detector_candidates)]]
 List detector_candidates(SEXP det_ptr) {
-  XPtr<std::shared_ptr<Info>> ptr(det_ptr);
-  if (!ptr || !(*ptr)) stop("Invalid info pointer");
-
-  const auto& candidates = (*ptr)->candidates();
+  const auto& candidates = detector_state(det_ptr)->candidates();
   const size_t K = candidates.size();
 
   // if size is 0, return empty list (as this is arp case)
@@ -653,7 +615,7 @@ List detector_candidates(SEXP det_ptr) {
   return out;
 }
 
-//' Generate projection index sets
+//' Generate Projection Index Sets
 //'
 //' Generates projection index sets for high-dimensional multivariate detectors
 //' using circular combinations.
@@ -661,8 +623,15 @@ List detector_candidates(SEXP det_ptr) {
 //' @param d Integer. Total number of dimensions.
 //' @param p Integer. Projection subset size (number of dimensions per projection).
 //'
-//' @return A list of integer vectors. Each element is a vector of 0-based
-//'   column indices representing one projection.
+//' @return An object of class \code{"focus_projections"}: a list of integer
+//'   vectors, each holding the 0-based column indices of one projection, with
+//'   the number of dimensions and the projection size stored in the attributes
+//'   \code{"d"} and \code{"p"}. It can be passed directly as the
+//'   \code{dim_indexes} argument of \code{\link{detector_create}()} and
+//'   \code{\link{focus_offline}()}. A \code{print} method shows one projection
+//'   per row, subsetting with \code{[} (e.g., \code{head()}) keeps the class,
+//'   and \code{as.matrix()} returns the indices as a matrix with one row per
+//'   projection; see \code{\link{focus-methods}}.
 //'
 //' @details
 //' This function generates systematic projection sets for use with multivariate
@@ -670,15 +639,18 @@ List detector_candidates(SEXP det_ptr) {
 //' dimensional space while keeping the number of projections manageable.
 //'
 //' @examples
-//' \donttest{
 //' # Generate 2-dimensional projections from 5 dimensions
 //' proj <- generate_projection_indexes(d = 5, p = 2)
-//' print(proj)
+//' proj
+//' as.matrix(proj)
 //'
 //' # Use with multivariate detector
 //' det <- detector_create(type = "multivariate", dim_indexes = proj)
+//' detector_update(det, c(0.5, 1.2, -0.3, 0.8, 0.1))
+//'
+//' # Offline comparison of the full detector and approximation
 //' set.seed(42)
-//' d <- 5
+//' d <- 6
 //'
 //' # Create data: changepoint at t=1000
 //' Y_multi <- rbind(
@@ -693,7 +665,7 @@ List detector_candidates(SEXP det_ptr) {
 //' )
 //'
 //' # Low-dimensional projection approximation
-//' dim_indexes <- generate_projection_indexes(5, 2)
+//' dim_indexes <- generate_projection_indexes(6, 2)
 //' system.time(
 //' res_multi_approx <- focus_offline(Y_multi, threshold = Inf,
 //'                                   type = "multivariate", family = "gaussian",
@@ -702,18 +674,20 @@ List detector_candidates(SEXP det_ptr) {
 //'
 //' # Verify similarity
 //' all.equal(res_multi$stat, res_multi_approx$stat)
-//' }
 //'
 //' @export
 // [[Rcpp::export]]
-std::vector<std::vector<int>> generate_projection_indexes(int d, int p) {
-  std::vector<std::vector<int>> combs = generate_circular_combinations(d, p);
-  return combs;
+List generate_projection_indexes(int d, int p) {
+  List out = wrap(generate_circular_combinations(d, p));
+  out.attr("d") = d;
+  out.attr("p") = p;
+  out.attr("class") = "focus_projections";
+  return out;
 }
 
 
 //' @name focus_offline
-//' @title Run FOCuS detector in offline batch mode
+//' @title Run a FOCuS Detector in Offline Batch Mode
 //'
 //' @description
 //' Processes all data at once and returns detection results and trajectories.
@@ -754,7 +728,9 @@ std::vector<std::vector<int>> generate_projection_indexes(int d, int p) {
 //'   Only used when \code{type = "arp"}.
 //'   Default is \code{NULL}.
 //'
-//' @return A list with components:
+//' @return An object of class \code{"focus_offline"}, with \code{print},
+//'   \code{summary} and \code{plot} methods (see \code{\link{focus-methods}}):
+//'   a list with components
 //'   \item{stat}{Numeric matrix. Test statistics over time (n_obs × n_stats).
 //'     Each row corresponds to one time point, each column to one statistic.}
 //'   \item{changepoint}{Integer vector. Detected changepoints at each time
@@ -776,8 +752,9 @@ std::vector<std::vector<int>> generate_projection_indexes(int d, int p) {
 //' efficiency. It processes observations sequentially and stops at the first
 //' detection (when any statistic exceeds its threshold).
 //'
-//' For multivariate data, the algorithm computes multiple statistics (one per
-//' projection). Detection occurs when ANY statistic exceeds its threshold.
+//' When more than one statistic is computed (e.g., the sum and maximum
+//' statistics of \code{"npfocus"}), a detection occurs when any statistic
+//' exceeds its threshold.
 //'
 //' @examples
 //' # Univariate Gaussian detection
@@ -785,15 +762,14 @@ std::vector<std::vector<int>> generate_projection_indexes(int d, int p) {
 //' Y <- c(rnorm(100, mean = 0), rnorm(100, mean = 2))
 //' result <- focus_offline(Y, threshold = 10, type = "univariate",
 //'                        family = "gaussian")
-//' cat("Detection at time:", result$detection_time, "\n")
-//' cat("Changepoint at:", result$detected_changepoint, "\n")
+//' result
+//' summary(result)
 //'
-//' # Plot statistics
-//' plot(result$stat, type = "l", ylab = "Test Statistic", xlab = "Time")
-//' abline(h = result$threshold, col = "red", lty = 2)
-//' if (!is.null(result$detection_time)) {
-//'   abline(v = result$detection_time, col = "blue", lty = 2)
-//' }
+//' # Plot the trace of the statistic, the threshold and the detection
+//' plot(result)
+//'
+//' # Plot the data above the trace of the statistic
+//' plot(result, data = Y)
 //'
 //' # Poisson detection
 //' Y_poisson <- c(rpois(100, lambda = 2), rpois(100, lambda = 5))
@@ -1082,8 +1058,8 @@ List focus_offline(SEXP Y,
   List candidates_list;
   candidates_list = detector_candidates(detector_ptr);
 
-  // ---- Return results ----
-  return List::create(
+  // ---- Return results, classed as "focus_offline" ----
+  List out = List::create(
     Named("stat") = stat_mat,
     Named("changepoint") = changepoint_vec,
     Named("detection_time") = detection_time == NA_INTEGER ? R_NilValue : wrap(detection_time),
@@ -1095,4 +1071,6 @@ List focus_offline(SEXP Y,
     Named("family") = family,
     Named("shape") = (family == "gamma" ? wrap(shape_scalar) : R_NilValue)
   );
+  out.attr("class") = "focus_offline";
+  return out;
 }
