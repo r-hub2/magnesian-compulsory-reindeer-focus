@@ -65,10 +65,14 @@ test_that("summary of a detector reports its state", {
   expect_equal(s2$statistics, get_statistics(det, family = "gaussian"))
   expect_output(print(s2), "focus statistics")
 
-  s_arp <- summary(make_detector("arp", rho = 0.5), family = "arp")
+  det_arp <- make_detector("arp", rho = 0.5)
+  s_arp <- summary(det_arp, family = "arp")
   expect_equal(s_arp$ar_order, 1L)
-  expect_null(s_arp$n_candidates)
+  expect_equal(s_arp$n_candidates, detector_cands_len(det_arp))
+  expect_gt(s_arp$n_candidates, 0L)
+  expect_equal(s_arp$candidates, sort(unique(detector_candidates(det_arp)$tau)))
   expect_output(print(s_arp), "AR order")
+  expect_output(print(det_arp), "candidates")
 })
 
 test_that("offline results have print, summary and plot methods", {

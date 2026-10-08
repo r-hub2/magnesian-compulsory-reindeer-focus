@@ -163,9 +163,8 @@ print.focus_detector <- function(x, ...) {
   }
   if (identical(type, "arp")) {
     .focus_field("AR order", attr(x, "ar_order"))
-  } else {
-    .focus_field("candidates", detector_cands_len(x))
   }
+  .focus_field("candidates", detector_cands_len(x))
   invisible(x)
 }
 
@@ -305,12 +304,11 @@ plot.focus_offline <- function(x, data = NULL, type = "l", lty = 1, col = NULL, 
 summary.focus_detector <- function(object, family = NULL, theta0 = NULL, shape = NULL, ...) {
   n <- detector_info_n(object)
   type <- attr(object, "type")
-  arp <- identical(type, "arp")
   structure(
     list(type = type, side = attr(object, "side"), ar_order = attr(object, "ar_order"),
          n = n, sn = detector_info_sn(object),
-         n_candidates = if (!arp) detector_cands_len(object),
-         candidates = if (!arp) sort(unique(detector_candidates(object)$tau)),
+         n_candidates = detector_cands_len(object),
+         candidates = sort(unique(detector_candidates(object)$tau)),
          statistics = if (!is.null(family)) {
            get_statistics(object, family = family, theta0 = theta0, shape = shape)
          }),

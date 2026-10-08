@@ -46,7 +46,7 @@ Encoding: UTF-8
 Suggests: ggplot2, testthat (>= 3.0.0)
 Config/roxygen2/version: 8.1.0
 NeedsCompilation: yes
-Packaged: 2026-10-08 10:29:59 UTC; romano
+Packaged: 2026-10-08 10:39:17 UTC; romano
 Author: Gaetano Romano [aut, cre, trl],
   Kes Ward [aut],
   Yuntang Fan [aut],
